@@ -1,0 +1,11 @@
+name = "balance"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+# Node.js API larini ishlatish uchun
+compatibility_flags = ["nodejs_compat"]
+
+# ===== ENV VARS =====
+[vars]
+TURSO_URL = "libsql://lemongift-allaberganov.aws-ap-northeast-1.turso.io"
+TURSO_AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Njg0ODg4NjUsImlkIjoiMDcxZDRlMmYtYjc1MS00YWU2LThlOGYtNjZjMjkwNGRjZWMwIiwicmlkIjoiYjBjOGM4MWUtMzUzNy00N2JjLTk5NzktYzU5YjAzOWMxZDU5In0.uoF_hxgNUtIts_a1acYFmqCZzYQw8ZhvBUHY14yB2c7_xsMWDkQcepkJ_aksEDXz3kK-9K-_46lZiYdmRMynDA"
