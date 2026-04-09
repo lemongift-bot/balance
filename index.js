@@ -1,102 +1,60 @@
-export default {
-  async fetch(request, env) {
-    // CORS headers
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
-    }
-
-    try {
-      if (request.method !== "POST") {
-        return new Response("Method not allowed", { status: 405, headers: corsHeaders });
-      }
-
-      const { initData } = await request.json();
-      if (!initData) {
-        return json({ ok: false, error: "initData missing" }, 400, corsHeaders);
-      }
-
-      const botToken = env.BOT_TOKEN; // wrangler.toml’da qo‘shilgan
-
-      // initData verification
-      const result = await verifyInitData(initData, botToken);
-
-      if (!result.valid) {
-        return json({ ok: false, error: "Invalid initData" }, 401, corsHeaders);
-      }
-
-      return json({ ok: true, user: result.user }, 200, corsHeaders);
-
-    } catch (err) {
-      return json({ ok: false, error: err.message }, 500, corsHeaders);
-    }
-  }
-};
-
-// =========================
-// 🔹 JSON helper
-// =========================
-function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: { "Content-Type": "application/json", ...headers }
-  });
-}
-
-// =========================
-// 🔹 initData verification using Web Crypto API
-// =========================
 async function verifyInitData(initData, botToken) {
-  // Parse initData string: key1=value1&key2=value2...
-  const params = Object.fromEntries(initData.split("&").map(pair => {
-    const [key, value] = pair.split("=");
-    return [key, decodeURIComponent(value)];
-  }));
-
-  const hash = params.hash;
+  const urlParams = new URLSearchParams(initData);
+  const hash = urlParams.get("hash");
+  
   if (!hash) return { valid: false };
 
-  // Build check string (sorted keys except hash)
-  const checkString = Object.keys(params)
-    .filter(k => k !== "hash")
-    .sort()
-    .map(k => `${k}=${params[k]}`)
-    .join("\n");
+  // 1. Ma'lumotlarni alfavit tartibida saralash (hash'dan tashqari)
+  const keys = Array.from(urlParams.keys()).filter(k => k !== "hash").sort();
+  const checkString = keys.map(k => `${k}=${urlParams.get(k)}`).join("\n");
 
-  // Telegram secret key derived from bot token
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(botToken),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
+  const encoder = new TextEncoder();
+
+  // 2. Secret Key yaratish ("WebAppData" constant + Bot Token)
+  const webAppDataKey = await crypto.subtle.importKey(
+    "raw", 
+    encoder.encode("WebAppData"), 
+    { name: "HMAC", hash: "SHA-256" }, 
+    false, 
+    ["sign"]
+  );
+  
+  const secretKeyBuffer = await crypto.subtle.sign(
+    "HMAC", 
+    webAppDataKey, 
+    encoder.encode(botToken)
+  );
+
+  // 3. Secret Key orqali checkString'ni imzolash
+  const hmacKey = await crypto.subtle.importKey(
+    "raw", 
+    secretKeyBuffer, 
+    { name: "HMAC", hash: "SHA-256" }, 
+    false, 
     ["sign"]
   );
 
-  // Compute HMAC SHA256
   const signatureBuffer = await crypto.subtle.sign(
-    "HMAC",
-    keyMaterial,
-    new TextEncoder().encode(checkString)
+    "HMAC", 
+    hmacKey, 
+    encoder.encode(checkString)
   );
 
   const signatureHex = Array.from(new Uint8Array(signatureBuffer))
     .map(b => b.toString(16).padStart(2, "0"))
     .join("");
 
-  // Compare computed signature with hash
+  // 4. Taqqoslash
   if (signatureHex !== hash) return { valid: false };
 
-  // Optional: auth_date check (2 soatdan oshmasligi)
-  const authDate = Number(params.auth_date);
-  if (Date.now() / 1000 - authDate > 7200) {
-    return { valid: false };
+  // Vaqtni tekshirish
+  const authDate = Number(urlParams.get("auth_date"));
+  if (Math.floor(Date.now() / 1000) - authDate > 7200) {
+    return { valid: false, error: "Data expired" };
   }
 
-  // Agar valid
-  return { valid: true, user: JSON.parse(params.user || "{}") };
+  return { 
+    valid: true, 
+    user: JSON.parse(urlParams.get("user") || "{}") 
+  };
 }
